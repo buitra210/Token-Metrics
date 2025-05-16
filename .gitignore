@@ -1,2 +1,30 @@
-./.env/
-./__pycache__/
+# Byte-code và cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Môi trường ảo
+/.venv/
+/env/
+/venv/
+/ENV/
+/env.bak/
+/venv.bak/
+/venv*
+
+# File cấu hình môi trường
+/.env
+/.env_previous
+
+# Thư mục phân phối và build
+build/
+dist/
+*.egg-info/
+
+# IDEs và Tools
+.vscode/
+.idea/
+
+# Logs và tệp tạm
+*.log
+*.tmp
