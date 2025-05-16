@@ -17,7 +17,8 @@ def create_app() -> Sanic:
     app.config.API_VERSION = "1.0.0"
     app.config.API_DESCRIPTION = "API for blockchain metrics and analytics"
     app.config.OAS_UI_DEFAULT = "swagger"  # Use Swagger UI
-    app.config.OAS_UI_REDOC = True  # Thêm ReDoc UI
+    app.config.OAS_UI_REDOC = True
+    app.config.RESPONSE_TIMEOUT = 150
 
     # Cấu hình CORS
     app.config.CORS_ORIGINS = "*"
@@ -46,6 +47,8 @@ def create_app() -> Sanic:
 
         # Create indexes for better performance
         await app.ctx.db.token_metrics.create_index("campaign_id")
+        await app.ctx.db.campaign_reports.create_index("contract_address")
+        await app.ctx.db.campaign_reports.create_index([("last_updated", -1)])
 
         print(f"Connected to MongoDB at {MONGO_URL}")
 
