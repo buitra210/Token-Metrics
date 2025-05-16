@@ -18,28 +18,19 @@ class EtherscanService:
         self.api_url = ETHERSCAN_API_URL
         self.logger = logging.getLogger(__name__)
 
-        # Kiểm tra API key
         if not self.api_key or self.api_key == "YourEtherscanApiKeyHere":
-            logging.warning("ETHERSCAN_API_KEY không được cấu hình hoặc không hợp lệ")
-            print("CẢNH BÁO: ETHERSCAN_API_KEY không được cấu hình. Đăng ký API key tại https://etherscan.io/apis")
+            logging.warning("ETHERSCAN_API_KEY is not setup in config.py")
+            print("WARNING: ETHERSCAN_API_KEY is not setup in config.py. Please register API key at https://etherscan.io/apis")
 
+    #Lấy block theo timestamp
     async def get_block_by_timestamp(self, timestamp: int) -> int:
-        """
-        Get the nearest block number for a given timestamp using Etherscan API
-
-        Args:
-            timestamp: Unix timestamp
-
-        Returns:
-            Block number
-        """
         self.logger.info(f"Getting block number for timestamp: {timestamp} ({datetime.fromtimestamp(timestamp).isoformat()})")
 
         params = {
             'module': 'block',
             'action': 'getblocknobytime',
             'timestamp': str(timestamp),
-            'closest': 'before',  # Get the block just before this timestamp
+            'closest': 'before',  #Lấy block gần nhất trước timestamp
             'apikey': self.api_key
         }
 
@@ -90,18 +81,17 @@ class EtherscanService:
         self.logger.info(f"Block range: {from_block} to {to_block}")
         self.logger.info(f"Sort order: {sort_order}, Max pages: {max_pages}, Page size: {page_size}")
 
-        # Validate parameters
         if sort_order not in ["asc", "desc"]:
-            sort_order = "desc"  # Default to descending
+            sort_order = "desc"
 
         if page_size > 1000:
-            page_size = 1000  # Etherscan max limit
+            page_size = 1000
 
         all_transactions = []
         current_page = 1
         has_more_data = True
 
-        # Loop through pages until no more data or max_pages reached
+        #Lấy tất cả các giao dịch từ block bắt đầu đến block kết thúc
         while has_more_data and (max_pages == 0 or current_page <= max_pages):
             self.logger.info(f"Fetching page {current_page}...")
 
@@ -132,7 +122,7 @@ class EtherscanService:
                     result = data.get('result', '')
 
                     if error_msg == 'NOTOK' and 'API Key' in result:
-                        raise Exception(f"Etherscan API key không hợp lệ hoặc rate limit bị vượt quá. Chi tiết: {result}")
+                        raise Exception(f"Etherscan API key is invalid. Details: {result}")
                     elif 'rate limit' in str(result).lower():
                         self.logger.warning(f"Rate limit reached. Waiting before next request.")
                         await asyncio.sleep(1)  # Add delay to respect rate limits
@@ -145,7 +135,6 @@ class EtherscanService:
                     elif contract_address in str(result):
                         raise Exception(f"Địa chỉ contract không hợp lệ hoặc không tồn tại: {result}")
                     elif 'No transactions found' in str(result):
-                        # No more transactions for this contract
                         self.logger.info(f"No more transactions found for this contract.")
                         has_more_data = False
                         break
@@ -322,7 +311,7 @@ class EtherscanService:
             pre_start_block,
             pre_end_block,
             max_pages=max_pages,
-            sort_order="asc"  # Oldest first for accurate holder tracking
+            sort_order="desc"
         )
 
         # Get transactions for campaign period
@@ -331,7 +320,7 @@ class EtherscanService:
             campaign_start_block,
             campaign_end_block,
             max_pages=max_pages,
-            sort_order="asc"  # Oldest first for consistent analysis
+            sort_order="desc"
         )
 
         self.logger.info(f"Pre-campaign transactions: {len(pre_transactions)}")
@@ -380,13 +369,13 @@ class EtherscanService:
         try:
             # Try to get a historical baseline for holders that existed before pre-campaign
             historical_end_block = pre_start_block - 1
-            historical_start_block = max(1, historical_end_block - 1000000)  # Try 1M blocks before
+            historical_start_block = max(1, historical_end_block - 10000000)  # Try 10M blocks before
 
             historical_txs = await self.get_token_transactions_by_blocks(
                 contract_address,
                 historical_start_block,
                 historical_end_block,
-                max_pages=3,  # Just get a sample
+                max_pages=10,
                 sort_order="asc"
             )
 

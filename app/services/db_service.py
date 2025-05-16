@@ -35,7 +35,7 @@ class DBService:
             if data_collection:
                 update_fields["data_collection"] = {
                     "max_pages": data_collection.get("maxPages", 0),
-                    "sort_order": data_collection.get("sortOrder", "asc"),
+                    "sort_order": data_collection.get("sortOrder", "desc"),
                     "transactions_found": data_collection.get("transactionsFound", 0)
                 }
 
