@@ -7,4 +7,4 @@ app = create_app()
 
 if __name__ == "__main__":
     app.run(host=SERVER_HOST, port=SERVER_PORT, debug=DEBUG, single_process=True)
-    print(f"API Documentation available at: http://{SERVER_HOST}:{custom_port}/docs")
+    print(f"API Documentation available at: http://{SERVER_HOST}:{SERVER_PORT}/docs")
