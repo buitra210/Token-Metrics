@@ -17,26 +17,6 @@ cd blockchain-metrics/backend
 pip install -r requirements.txt
 ```
 
-3. Tạo tệp .env trong thư mục root với cấu hình:
-
-```
-ETHERSCAN_API_KEY=your_api_key_here
-ETHERSCAN_API_URL=https://api.etherscan.io/api
-MONGO_URL=mongodb://localhost:27017/
-MONGO_DB=blockchain_metrics
-SERVER_HOST=0.0.0.0
-SERVER_PORT=8002
-DEBUG=True
-```
-
-## Cấu hình API key Etherscan
-
-Để sử dụng đầy đủ chức năng của ứng dụng, bạn cần một API key từ Etherscan:
-
-1. Đăng ký tài khoản tại [Etherscan](https://etherscan.io)
-2. Đăng nhập và truy cập [trang API Keys](https://etherscan.io/myapikey)
-3. Tạo API key mới và copy vào tệp .env
-
 ## Khởi chạy server
 
 ```bash
@@ -49,7 +29,7 @@ Server sẽ chạy tại địa chỉ http://0.0.0.0:8002
 
 ### Swagger UI
 
-Truy cập tài liệu API tại: http://0.0.0.0:8002/docs
+Truy cập tài liệu API tại: http://0.0.0.0:8000/docs
 
 ### Chức năng chính
 
