@@ -16,9 +16,9 @@ def create_app() -> Sanic:
     app.config.API_TITLE = "Blockchain Metrics API"
     app.config.API_VERSION = "1.0.0"
     app.config.API_DESCRIPTION = "API for blockchain metrics and analytics"
-    app.config.OAS_UI_DEFAULT = "swagger"  # Use Swagger UI
+    app.config.OAS_UI_DEFAULT = "swagger"
     app.config.OAS_UI_REDOC = True
-    app.config.RESPONSE_TIMEOUT = 150
+    app.config.RESPONSE_TIMEOUT = 300
 
     # Cấu hình CORS
     app.config.CORS_ORIGINS = "*"
