@@ -245,7 +245,6 @@ class EtherscanService:
                 'sort': 'desc',  # Lấy giao dịch mới nhất
                 'apikey': self.api_key
             }
-
             async with aiohttp.ClientSession() as session:
                 async with session.get(self.api_url, params=params) as response:
                     if response.status != 200:
