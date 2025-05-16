@@ -1,0 +1,8 @@
+sanic
+sanic-swagger
+motor
+pymongo
+python-dotenv
+aiohttp
+web3
+pydantic
