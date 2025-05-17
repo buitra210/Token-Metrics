@@ -300,6 +300,105 @@ async def report_volume_transaction(request: Request):
             "message": f"Error generating campaign report: {str(e)}"
         }, status=500)
 
+@etherscan_blueprint.route("/report-new-token-holders", methods=["POST"])
+@openapi.summary("Generate Report New Token Holders")
+@openapi.description("Generate a report of New Token Holders for a given contract address")
+@openapi.body({
+    "contractAddress": "0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE",
+    "preCampaignStart": "2023-01-01T00:00:00Z",
+    "preCampaignEnd": "2023-01-31T23:59:59Z",
+    "campaignStart": "2023-02-01T00:00:00Z",
+    "campaignEnd": "2023-02-28T23:59:59Z",
+    "maxPages": 10
+})
+@openapi.response(200, {
+    "success": True,
+    "message": "Campaign report generated successfully",
+    "data": {}
+}, "Success")
+@openapi.response(400, {"success": False, "message": "Invalid parameters"}, "Invalid parameters")
+@openapi.response(500, {"success": False, "message": "Error generating report"}, "Server error")
+async def report_new_token_holders(request: Request):
+    """
+    Generate a comprehensive campaign report with pre vs. during campaign metrics comparison
+    """
+    try:
+        # Validate request body
+        if not request.json:
+            return response.json({
+                "success": False,
+                "message": "Request body is required"
+            }, status=400)
+
+        try:
+            body = CampaignReportRequest(**request.json)
+        except Exception as e:
+            return response.json({
+                "success": False,
+                "message": f"Invalid request data: {str(e)}"
+            }, status=400)
+
+        # Validate contract address
+        contract_address = body.contractAddress
+        if not contract_address.startswith('0x') or len(contract_address) != 42:
+            return response.json({
+                "success": False,
+                "message": f"Invalid Ethereum address format: {contract_address}. Address must be in format 0x... and 42 characters long."
+            }, status=400)
+
+        # Parse dates
+        try:
+            pre_start = datetime.fromisoformat(body.preCampaignStart.replace('Z', '+00:00'))
+            pre_end = datetime.fromisoformat(body.preCampaignEnd.replace('Z', '+00:00'))
+            campaign_start = datetime.fromisoformat(body.campaignStart.replace('Z', '+00:00'))
+            campaign_end = datetime.fromisoformat(body.campaignEnd.replace('Z', '+00:00'))
+        except ValueError as e:
+            return response.json({
+                "success": False,
+                "message": f"Invalid date format. Use ISO format (e.g. 2023-01-01T00:00:00Z): {str(e)}"
+            }, status=400)
+
+        # Validate date ranges
+        if pre_end <= pre_start:
+            return response.json({
+                "success": False,
+                "message": "Pre-campaign end date must be after start date"
+            }, status=400)
+
+        if campaign_end <= campaign_start:
+            return response.json({
+                "success": False,
+                "message": "Campaign end date must be after start date"
+            }, status=400)
+
+        # Generate report
+        etherscan_service = EtherscanService()
+        report = await etherscan_service.get_new_token_holders(
+            contract_address,
+            pre_start,
+            pre_end,
+            campaign_start,
+            campaign_end,
+            max_pages=body.maxPages
+        )
+
+        # Store report in database if needed
+        db_service = DBService(request.app.ctx.db)
+        await db_service.store_new_token_holders(report)
+
+        return response.json({
+            "success": True,
+            "message": "Campaign report generated successfully",
+            "data": report
+        })
+
+    except Exception as e:
+        return response.json({
+            "success": False,
+            "message": f"Error generating campaign report: {str(e)}"
+        }, status=500)
+
+
 
 @etherscan_blueprint.route("/fetch-metrics", methods=["POST"])
 @openapi.summary("Fetch metrics from Etherscan")
