@@ -18,28 +18,19 @@ class EtherscanService:
         self.api_url = ETHERSCAN_API_URL
         self.logger = logging.getLogger(__name__)
 
-        # Kiểm tra API key
         if not self.api_key or self.api_key == "YourEtherscanApiKeyHere":
-            logging.warning("ETHERSCAN_API_KEY không được cấu hình hoặc không hợp lệ")
-            print("CẢNH BÁO: ETHERSCAN_API_KEY không được cấu hình. Đăng ký API key tại https://etherscan.io/apis")
+            logging.warning("ETHERSCAN_API_KEY is not setup in config.py")
+            print("WARNING: ETHERSCAN_API_KEY is not setup in config.py. Please register API key at https://etherscan.io/apis")
 
+    #Lấy block theo timestamp
     async def get_block_by_timestamp(self, timestamp: int) -> int:
-        """
-        Get the nearest block number for a given timestamp using Etherscan API
-
-        Args:
-            timestamp: Unix timestamp
-
-        Returns:
-            Block number
-        """
         self.logger.info(f"Getting block number for timestamp: {timestamp} ({datetime.fromtimestamp(timestamp).isoformat()})")
 
         params = {
             'module': 'block',
             'action': 'getblocknobytime',
             'timestamp': str(timestamp),
-            'closest': 'before',  # Get the block just before this timestamp
+            'closest': 'before',  #Lấy block gần nhất trước timestamp
             'apikey': self.api_key
         }
 
@@ -85,23 +76,21 @@ class EtherscanService:
         Returns:
             List of transactions matching the criteria
         """
-        # Log information for debugging
         self.logger.info(f"Fetching transactions for contract: {contract_address}")
         self.logger.info(f"Block range: {from_block} to {to_block}")
         self.logger.info(f"Sort order: {sort_order}, Max pages: {max_pages}, Page size: {page_size}")
 
-        # Validate parameters
         if sort_order not in ["asc", "desc"]:
-            sort_order = "desc"  # Default to descending
+            sort_order = "desc"
 
         if page_size > 1000:
-            page_size = 1000  # Etherscan max limit
+            page_size = 1000
 
         all_transactions = []
         current_page = 1
         has_more_data = True
 
-        # Loop through pages until no more data or max_pages reached
+        #Lấy tất cả các giao dịch từ block bắt đầu đến block kết thúc
         while has_more_data and (max_pages == 0 or current_page <= max_pages):
             self.logger.info(f"Fetching page {current_page}...")
 
@@ -132,7 +121,7 @@ class EtherscanService:
                     result = data.get('result', '')
 
                     if error_msg == 'NOTOK' and 'API Key' in result:
-                        raise Exception(f"Etherscan API key không hợp lệ hoặc rate limit bị vượt quá. Chi tiết: {result}")
+                        raise Exception(f"Etherscan API key is invalid. Details: {result}")
                     elif 'rate limit' in str(result).lower():
                         self.logger.warning(f"Rate limit reached. Waiting before next request.")
                         await asyncio.sleep(1)  # Add delay to respect rate limits
@@ -145,7 +134,6 @@ class EtherscanService:
                     elif contract_address in str(result):
                         raise Exception(f"Địa chỉ contract không hợp lệ hoặc không tồn tại: {result}")
                     elif 'No transactions found' in str(result):
-                        # No more transactions for this contract
                         self.logger.info(f"No more transactions found for this contract.")
                         has_more_data = False
                         break
@@ -234,8 +222,6 @@ class EtherscanService:
                 return self.token_info
 
         try:
-            # Thử phương pháp 1: Lấy thông tin từ giao dịch gần đây nhất
-            # Không cần API Pro, sử dụng miễn phí
             params = {
                 'module': 'account',
                 'action': 'tokentx',
@@ -261,7 +247,6 @@ class EtherscanService:
                     'decimals': tx.get('tokenDecimal', default_info['decimals']),
                     'divisor': 10 ** int(tx.get('tokenDecimal', default_info['decimals']))
                 }
-                # Save the token info and the contract it belongs to
                 self.token_info = token_info
                 self.current_contract = contract_address
                 return token_info
@@ -272,8 +257,8 @@ class EtherscanService:
         except Exception as e:
             self.logger.error(f"Lỗi khi lấy thông tin token: {str(e)}")
             return default_info
-
-    async def generate_campaign_report(self, contract_address: str,
+# generate_campaign_report
+    async def generate_wallet_action(self, contract_address: str,
                                      pre_start_time: datetime, pre_end_time: datetime,
                                      campaign_start_time: datetime, campaign_end_time: datetime,
                                      max_pages: int = 10) -> Dict:
@@ -304,8 +289,6 @@ class EtherscanService:
         # Get token info first
         token_info = await self.get_token_info(contract_address)
         token_symbol = token_info.get('symbol', 'TOKEN')
-        token_decimals = int(token_info.get('decimals', '18'))
-        token_divisor = 10 ** token_decimals
 
         # Convert timestamps to block numbers
         pre_start_block = await self.get_block_by_timestamp(int(pre_start_time.timestamp()))
@@ -316,28 +299,25 @@ class EtherscanService:
         self.logger.info(f"Pre-campaign blocks: {pre_start_block} to {pre_end_block}")
         self.logger.info(f"Campaign blocks: {campaign_start_block} to {campaign_end_block}")
 
-        # Get transactions for pre-campaign period (oldest first for holder analysis)
         pre_transactions = await self.get_token_transactions_by_blocks(
             contract_address,
             pre_start_block,
             pre_end_block,
             max_pages=max_pages,
-            sort_order="asc"  # Oldest first for accurate holder tracking
+            sort_order="desc"
         )
 
-        # Get transactions for campaign period
         campaign_transactions = await self.get_token_transactions_by_blocks(
             contract_address,
             campaign_start_block,
             campaign_end_block,
             max_pages=max_pages,
-            sort_order="asc"  # Oldest first for consistent analysis
+            sort_order="desc"
         )
 
         self.logger.info(f"Pre-campaign transactions: {len(pre_transactions)}")
         self.logger.info(f"Campaign transactions: {len(campaign_transactions)}")
 
-        # ----- Calculate metrics -----
 
         # 1. Active wallets (unique addresses participating in transactions)
         pre_wallets = set()
@@ -358,64 +338,49 @@ class EtherscanService:
         if active_wallets_pre > 0:
             active_wallets_change = round((active_wallets_campaign - active_wallets_pre) / active_wallets_pre * 100, 1)
 
-        # 2. Transaction volume
-        pre_volume = 0
-        for tx in pre_transactions:
-            pre_volume += int(tx['value']) / token_divisor
-
-        campaign_volume = 0
-        for tx in campaign_transactions:
-            campaign_volume += int(tx['value']) / token_divisor
-
-        # Calculate change percentage
-        volume_change = 0
-        if pre_volume > 0:
-            volume_change = round((campaign_volume - pre_volume) / pre_volume * 100, 1)
-
         # 3. New token holders
         # Find all holders before the pre-campaign period to establish baseline
-        holders_before_pre = set()
+        # holders_before_pre = set()
 
         # Get some historical transactions (if available) to establish earlier holders
-        try:
-            # Try to get a historical baseline for holders that existed before pre-campaign
-            historical_end_block = pre_start_block - 1
-            historical_start_block = max(1, historical_end_block - 1000000)  # Try 1M blocks before
+        # try:
+        #     historical_end_block = pre_start_block - 1
+        #     historical_start_block = max(1, historical_end_block - 10000000)  # Try 10M blocks before
 
-            historical_txs = await self.get_token_transactions_by_blocks(
-                contract_address,
-                historical_start_block,
-                historical_end_block,
-                max_pages=3,  # Just get a sample
-                sort_order="asc"
-            )
+        #     historical_txs = await self.get_token_transactions_by_blocks(
+        #         contract_address,
+        #         historical_start_block,
+        #         historical_end_block,
+        #         max_pages=10,
+        #         sort_order="asc"
+        #     )
 
-            for tx in historical_txs:
-                holders_before_pre.add(tx['to'])
+        #     for tx in historical_txs:
+        #         holders_before_pre.add(tx['to'])
 
-            self.logger.info(f"Historical holders found: {len(holders_before_pre)}")
-        except Exception as e:
-            self.logger.warning(f"Unable to fetch historical holders: {str(e)}")
+        #     self.logger.info(f"Historical holders found: {len(holders_before_pre)}")
+        # except Exception as e:
+        #     self.logger.warning(f"Unable to fetch historical holders: {str(e)}")
 
         # New holders during pre-campaign
-        new_holders_pre = set()
-        for tx in pre_transactions:
-            if tx['to'] not in holders_before_pre and tx['to'] not in new_holders_pre:
-                new_holders_pre.add(tx['to'])
+        # new_holders_pre = set()
+        # for tx in pre_transactions:
+        #     if tx['to'] not in holders_before_pre and tx['to'] not in new_holders_pre:
+        #         new_holders_pre.add(tx['to'])
 
         # Add pre-campaign holders to the known holders set
-        holders_before_campaign = holders_before_pre.union(new_holders_pre)
+        # holders_before_campaign = holders_before_pre.union(new_holders_pre)
 
         # New holders during campaign
-        new_holders_campaign = set()
-        for tx in campaign_transactions:
-            if tx['to'] not in holders_before_campaign and tx['to'] not in new_holders_campaign:
-                new_holders_campaign.add(tx['to'])
+        # new_holders_campaign = set()
+        # for tx in campaign_transactions:
+        #     if tx['to'] not in holders_before_campaign and tx['to'] not in new_holders_campaign:
+        #         new_holders_campaign.add(tx['to'])
 
         # Calculate change percentage
-        new_holders_change = 0
-        if len(new_holders_pre) > 0:
-            new_holders_change = round((len(new_holders_campaign) - len(new_holders_pre)) / len(new_holders_pre) * 100, 1)
+        # new_holders_change = 0
+        # if len(new_holders_pre) > 0:
+        #     new_holders_change = round((len(new_holders_campaign) - len(new_holders_pre)) / len(new_holders_pre) * 100, 1)
 
         # ----- Calculate daily metrics -----
 
@@ -429,13 +394,13 @@ class EtherscanService:
         daily_active_wallets = defaultdict(set)
 
         # Daily transaction volume
-        daily_volume = defaultdict(float)
+        # daily_volume = defaultdict(float)
 
         # Daily new holders
-        daily_new_holders = defaultdict(set)
+        # daily_new_holders = defaultdict(set)
 
         # All known holders (including historical)
-        all_known_holders = holders_before_pre.copy()
+        # all_known_holders = holders_before_pre.copy()
 
         # Daily cumulative holders count
         daily_cumulative_holders = defaultdict(int)
@@ -451,47 +416,27 @@ class EtherscanService:
             daily_active_wallets[tx_date].add(tx['to'])
 
             # Add value to daily volume
-            daily_volume[tx_date] += int(tx['value']) / token_divisor
+            # daily_volume[tx_date] += int(tx['value']) / token_divisor
 
             # Check for new holders
-            if tx['to'] not in all_known_holders:
-                daily_new_holders[tx_date].add(tx['to'])
-                all_known_holders.add(tx['to'])
+            # if tx['to'] not in all_known_holders:
+            #     daily_new_holders[tx_date].add(tx['to'])
+            #     all_known_holders.add(tx['to'])
 
             # Update cumulative holders for this day and all subsequent days
-            daily_cumulative_holders[tx_date] = len(all_known_holders)
+            # daily_cumulative_holders[tx_date] = len(all_known_holders)
 
         # Convert daily data to sorted list format for response
-        daily_active_wallets_list = [
-            {"date": date, "count": len(addresses)}
-            for date, addresses in sorted(daily_active_wallets.items())
-        ]
-
-        daily_volume_list = [
-            {"date": date, "volume": volume}
-            for date, volume in sorted(daily_volume.items())
-        ]
-
-        daily_new_holders_list = [
-            {"date": date, "count": len(holders)}
-            for date, holders in sorted(daily_new_holders.items())
-        ]
-
-        # For cumulative holders, ensure all dates are filled
-        all_dates = sorted(set(
-            list(daily_active_wallets.keys()) +
-            list(daily_volume.keys()) +
-            list(daily_new_holders.keys())
-        ))
-
-        # Fill in any missing dates with the previous cumulative count
-        cumulative_count = 0
-        cumulative_holders_list = []
+        # Format daily active wallets for the response
+        daily_data = []
+        all_dates = sorted(daily_active_wallets.keys())
 
         for date in all_dates:
-            if date in daily_cumulative_holders:
-                cumulative_count = daily_cumulative_holders[date]
-            cumulative_holders_list.append({"date": date, "count": cumulative_count})
+            daily_entry = {
+                "date": date,
+                "count": len(daily_active_wallets[date])
+            }
+            daily_data.append(daily_entry)
 
         # ----- Prepare response -----
 
@@ -524,45 +469,320 @@ class EtherscanService:
                 }
             },
             "summary": {
-                "metrics": [
-                    {
-                        "name": "Active Wallets",
-                        "preCampaign": active_wallets_pre,
-                        "duringCampaign": active_wallets_campaign,
-                        "changePercent": active_wallets_change,
-                        "description": "Số địa chỉ ví duy nhất đã tương tác với hợp đồng"
-                    },
-                    {
-                        "name": f"Transaction Volume ({token_symbol})",
-                        "preCampaign": pre_volume,
-                        "duringCampaign": campaign_volume,
-                        "changePercent": volume_change,
-                        "description": "Tổng lượng token đã chuyển qua contract"
-                    },
-                    {
-                        "name": "New Token Holders",
-                        "preCampaign": len(new_holders_pre),
-                        "duringCampaign": len(new_holders_campaign),
-                        "changePercent": new_holders_change,
-                        "description": "Số địa chỉ lần đầu tiên nắm giữ token"
-                    }
-                ]
+                "name": "Active Wallets",
+                "preCampaign": active_wallets_pre,
+                "duringCampaign": active_wallets_campaign,
+                "changePercent": active_wallets_change,
+                "description": "Số địa chỉ ví duy nhất đã tương tác với hợp đồng"
             },
-            "dailyData": {
-                "activeWallets": daily_active_wallets_list,
-                "transactionVolume": daily_volume_list,
-                "newHolders": daily_new_holders_list,
-                "cumulativeHolders": cumulative_holders_list
-            },
+            "dailyData": daily_data,
             "dataCollection": {
                 "maxPages": max_pages,
                 "transactionsAnalyzed": {
                     "preCampaign": len(pre_transactions),
                     "duringCampaign": len(campaign_transactions),
-                    "total": len(all_transactions)
+                    "total": len(pre_transactions) + len(campaign_transactions)
                 }
-            },
-            "lastUpdated": datetime.now().isoformat()
+            }
         }
 
+        return report
+
+    async def get_volume_transaction(self, contract_address: str, pre_start_time: datetime, pre_end_time: datetime, campaign_start_time: datetime,
+                                    campaign_end_time: datetime, max_pages: int = 10) -> Dict:
+
+        self.logger.info(f"Getting volume of transactions for token: {contract_address}")
+        self.logger.info(f"Pre-campaign period: {pre_start_time.isoformat()} to {pre_end_time.isoformat()}")
+        self.logger.info(f"Campaign period: {campaign_start_time.isoformat()} to {campaign_end_time.isoformat()}")
+
+        if hasattr(self, 'token_info'):
+            delattr(self, 'token_info')
+        if hasattr(self, 'current_contract'):
+            delattr(self, 'current_contract')
+
+        token_info = await self.get_token_info(contract_address)
+        token_symbol = token_info.get('symbol', 'TOKEN')
+        token_decimals = int(token_info.get('decimals', '18'))
+        token_divisor = 10 ** token_decimals
+
+        pre_start_block = await self.get_block_by_timestamp(int(pre_start_time.timestamp()))
+        pre_end_block = await self.get_block_by_timestamp(int(pre_end_time.timestamp()))
+        campaign_start_block = await self.get_block_by_timestamp(int(campaign_start_time.timestamp()))
+        campaign_end_block = await self.get_block_by_timestamp(int(campaign_end_time.timestamp()))
+
+        pre_transactions = await self.get_token_transactions_by_blocks(
+            contract_address,
+            pre_start_block,
+            pre_end_block,
+            max_pages=max_pages,
+            sort_order="desc"
+        )
+
+        campaign_transactions = await self.get_token_transactions_by_blocks(
+            contract_address,
+            campaign_start_block,
+            campaign_end_block,
+            max_pages=max_pages,
+            sort_order="desc"
+        )
+
+        self.logger.info(f"Pre-campaign transactions: {len(pre_transactions)}")
+        self.logger.info(f"Campaign transactions: {len(campaign_transactions)}")
+
+        # Calculate volume of transactions
+        pre_volume = 0
+        for tx in pre_transactions:
+            pre_volume += int(tx['value']) / token_divisor
+
+        campaign_volume = 0
+        for tx in campaign_transactions:
+            campaign_volume += int(tx['value']) / token_divisor
+
+        volume_change = 0
+        if pre_volume > 0:
+            volume_change = round((campaign_volume - pre_volume) / pre_volume * 100, 1)
+
+        all_transactions = pre_transactions + campaign_transactions
+        all_transactions.sort(key=lambda tx: int(tx['timeStamp']))
+
+        daily_volume = defaultdict(float)
+         # Process transactions day by day
+        for tx in all_transactions:
+            # Convert timestamp to date
+            tx_timestamp = int(tx['timeStamp'])
+            tx_date = datetime.fromtimestamp(tx_timestamp).date().isoformat()
+
+            # Add value to daily volume
+            daily_volume[tx_date] += int(tx['value']) / token_divisor
+
+
+        daily_data = []
+        all_dates = sorted(daily_volume.keys())
+
+        for date in all_dates:
+            daily_entry = {
+                "date": date,
+                "count": daily_volume[date]
+            }
+            daily_data.append(daily_entry)
+
+        report = {
+            "campaign": {
+                "token": {
+                    "name": token_info.get('name', 'Unknown Token'),
+                    "symbol": token_symbol,
+                    "contractAddress": contract_address
+                },
+                "period": {
+                    "preCampaign": {
+                        "from": pre_start_time.isoformat(),
+                        "to": pre_end_time.isoformat()
+                    },
+                    "duringCampaign": {
+                        "from": campaign_start_time.isoformat(),
+                        "to": campaign_end_time.isoformat()
+                    }
+                },
+                "blocks": {
+                    "preCampaign": {
+                        "fromBlock": pre_start_block,
+                        "toBlock": pre_end_block
+                    },
+                    "duringCampaign": {
+                        "fromBlock": campaign_start_block,
+                        "toBlock": campaign_end_block
+                    }
+                }
+            },
+            "summary": {
+                "name": "Volume Transactions",
+                "preCampaign": pre_volume,
+                "duringCampaign": campaign_volume,
+                "changePercent": volume_change,
+                "description": "Số lượng token đã chuyển đổi trong khoảng thời gian"
+            },
+            "dailyData": daily_data,
+            "dataCollection": {
+                "maxPages": max_pages,
+                "transactionsAnalyzed": {
+                    "preCampaign": len(pre_transactions),
+                    "duringCampaign": len(campaign_transactions),
+                    "total": len(pre_transactions) + len(campaign_transactions)
+                }
+            }
+        }
+        return report
+
+    async def get_new_token_holders(self, contract_address: str, pre_start_time: datetime, pre_end_time: datetime, campaign_start_time: datetime,
+                                     campaign_end_time: datetime, max_pages: int = 10) -> Dict:
+
+        self.logger.info(f"Getting volume of transactions for token: {contract_address}")
+        self.logger.info(f"Pre-campaign period: {pre_start_time.isoformat()} to {pre_end_time.isoformat()}")
+        self.logger.info(f"Campaign period: {campaign_start_time.isoformat()} to {campaign_end_time.isoformat()}")
+
+        if hasattr(self, 'token_info'):
+            delattr(self, 'token_info')
+        if hasattr(self, 'current_contract'):
+            delattr(self, 'current_contract')
+
+        token_info = await self.get_token_info(contract_address)
+        token_symbol = token_info.get('symbol', 'TOKEN')
+        token_decimals = int(token_info.get('decimals', '18'))
+        token_divisor = 10 ** token_decimals
+
+        pre_start_block = await self.get_block_by_timestamp(int(pre_start_time.timestamp()))
+        pre_end_block = await self.get_block_by_timestamp(int(pre_end_time.timestamp()))
+        campaign_start_block = await self.get_block_by_timestamp(int(campaign_start_time.timestamp()))
+        campaign_end_block = await self.get_block_by_timestamp(int(campaign_end_time.timestamp()))
+
+        pre_transactions = await self.get_token_transactions_by_blocks(
+            contract_address,
+            pre_start_block,
+            pre_end_block,
+            max_pages=max_pages,
+            sort_order="desc"
+        )
+
+        campaign_transactions = await self.get_token_transactions_by_blocks(
+            contract_address,
+            campaign_start_block,
+            campaign_end_block,
+            max_pages=max_pages,
+            sort_order="desc"
+        )
+
+        self.logger.info(f"Pre-campaign transactions: {len(pre_transactions)}")
+        self.logger.info(f"Campaign transactions: {len(campaign_transactions)}")
+
+
+        holders_before_pre = set()
+
+        try:
+            historical_end_block = pre_start_block - 1
+            historical_start_block = max(1, historical_end_block - 10000000)
+
+            historical_txs = await self.get_token_transactions_by_blocks(
+                contract_address,
+                historical_start_block,
+                historical_end_block,
+                max_pages=10,
+                sort_order="asc"
+            )
+
+            for tx in historical_txs:
+                holders_before_pre.add(tx['to'])
+
+            self.logger.info(f"Historical holders found: {len(holders_before_pre)}")
+        except Exception as e:
+            self.logger.warning(f"Unable to fetch historical holders: {str(e)}")
+
+        new_holders_pre = set()
+        for tx in pre_transactions:
+            if tx['to'] not in holders_before_pre and tx['to'] not in new_holders_pre:
+                new_holders_pre.add(tx['to'])
+
+        holders_before_campaign = holders_before_pre.union(new_holders_pre)
+
+        new_holders_campaign = set()
+        for tx in campaign_transactions:
+            if tx['to'] not in holders_before_campaign and tx['to'] not in new_holders_campaign:
+                new_holders_campaign.add(tx['to'])
+
+        new_holders_change = 0
+        if len(new_holders_pre) > 0:
+            new_holders_change = round((len(new_holders_campaign) - len(new_holders_pre)) / len(new_holders_pre) * 100, 1)
+
+
+        all_transactions = pre_transactions + campaign_transactions
+        all_transactions.sort(key=lambda tx: int(tx['timeStamp']))
+
+        daily_new_holders = defaultdict(set)
+        daily_cumulative_holders = defaultdict(int)
+
+        all_known_holders = holders_before_pre.copy()
+
+        for tx in all_transactions:
+            # Convert timestamp to date
+            tx_timestamp = int(tx['timeStamp'])
+            tx_date = datetime.fromtimestamp(tx_timestamp).date().isoformat()
+
+            # Add value to daily volume
+            if tx['to'] not in all_known_holders:
+                daily_new_holders[tx_date].add(tx['to'])
+                all_known_holders.add(tx['to'])
+            daily_cumulative_holders[tx_date] = len(all_known_holders)
+
+
+        # Generate a complete date range for both periods
+        all_dates = set()
+
+        # Generate all dates for pre-campaign period
+        current_date = pre_start_time.date()
+        end_date = pre_end_time.date()
+        while current_date <= end_date:
+            all_dates.add(current_date.isoformat())
+            current_date += timedelta(days=1)
+
+        # Generate all dates for campaign period
+        current_date = campaign_start_time.date()
+        end_date = campaign_end_time.date()
+        while current_date <= end_date:
+            all_dates.add(current_date.isoformat())
+            current_date += timedelta(days=1)
+
+        daily_data = []
+        sorted_dates = sorted(all_dates)
+
+        for date in sorted_dates:
+            daily_entry = {
+                "date": date,
+                "count": len(daily_new_holders[date])
+            }
+            daily_data.append(daily_entry)
+
+        report = {
+            "campaign": {
+                "token": {
+                    "name": token_info.get('name', 'Unknown Token'),
+                    "symbol": token_symbol,
+                    "contractAddress": contract_address
+                },
+                "period": {
+                    "preCampaign": {
+                        "from": pre_start_time.isoformat(),
+                        "to": pre_end_time.isoformat()
+                    },
+                    "duringCampaign": {
+                        "from": campaign_start_time.isoformat(),
+                        "to": campaign_end_time.isoformat()
+                    }
+                },
+                "blocks": {
+                    "preCampaign": {
+                        "fromBlock": pre_start_block,
+                        "toBlock": pre_end_block
+                    },
+                    "duringCampaign": {
+                        "fromBlock": campaign_start_block,
+                        "toBlock": campaign_end_block
+                    }
+                }
+            },
+            "summary": {
+                "name": "New Token Holders",
+                "preCampaign": len(new_holders_pre),
+                "duringCampaign": len(new_holders_campaign),
+                "changePercent": new_holders_change,
+                "description": "Số địa chỉ ví mới đã nắm giữ token"
+            },
+            "dailyData": daily_data,
+            "dataCollection": {
+                "maxPages": max_pages,
+                "transactionsAnalyzed": {
+                    "preCampaign": len(pre_transactions),
+                    "duringCampaign": len(campaign_transactions),
+                    "total": len(pre_transactions) + len(campaign_transactions)
+                }
+            }
+        }
         return report

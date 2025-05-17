@@ -6,11 +6,50 @@ from typing import Optional, Dict, Any
 from pydantic import BaseModel
 from sanic_ext import openapi
 
-# Định nghĩa model response đơn giản
+# Define response models
+class TokenResponse(BaseModel):
+    name: str
+    symbol: str
+    contractAddress: str
+
+class PeriodResponse(BaseModel):
+    preCampaign: Dict[str, str]
+    duringCampaign: Dict[str, str]
+
+class BlocksResponse(BaseModel):
+    preCampaign: Dict[str, int]
+    duringCampaign: Dict[str, int]
+
+class CampaignResponse(BaseModel):
+    token: TokenResponse
+    period: PeriodResponse
+    blocks: BlocksResponse
+
+class SummaryResponse(BaseModel):
+    name: str
+    preCampaign: int
+    duringCampaign: int
+    changePercent: float
+    description: str
+
+class DailyDataItem(BaseModel):
+    date: str
+    count: int
+
+class TransactionsAnalyzed(BaseModel):
+    preCampaign: int
+    duringCampaign: int
+    total: int
+
+class DataCollectionResponse(BaseModel):
+    maxPages: int
+    transactionsAnalyzed: TransactionsAnalyzed
+
 class TokenMetricsResponse(BaseModel):
-    success: bool
-    message: Optional[str] = None
-    data: Optional[list] = None
+    campaign: CampaignResponse
+    summary: SummaryResponse
+    dailyData: list[DailyDataItem]
+    dataCollection: DataCollectionResponse
 
 token_metrics_blueprint = Blueprint('token_metrics', url_prefix='/api/metrics')
 
@@ -20,7 +59,7 @@ token_metrics_blueprint = Blueprint('token_metrics', url_prefix='/api/metrics')
 @openapi.parameter("campaign_id", str, "Campaign ID (Ethereum contract address)", required=True)
 @openapi.parameter("from_date", str, "Start date (ISO format, e.g. 2023-01-01T00:00:00Z)", required=False)
 @openapi.parameter("to_date", str, "End date (ISO format, e.g. 2023-12-31T23:59:59Z)", required=False)
-@openapi.response(200, {"success": True, "data": []}, "Successful response")
+@openapi.response(200, {"success": True, "data": {}}, "Successful response")
 @openapi.response(400, {"success": False, "message": "string"}, "Invalid parameters")
 @openapi.response(404, {"success": False, "message": "string"}, "No metrics found")
 @openapi.response(500, {"success": False, "message": "string"}, "Server error")
@@ -60,12 +99,12 @@ async def get_campaign_metrics(request: Request, campaign_id: str):
 
         # Get metrics from database
         db_service = DBService(request.app.ctx.db)
-        metrics = await db_service.get_metrics(campaign_id, from_date, to_date)
+        metrics = await db_service.get_campaign_report(campaign_id, from_date, to_date)
 
         if not metrics:
             return response.json({
                 "success": False,
-                "message": f"No metrics found for campaign {campaign_id}. Try fetching metrics first via /api/etherscan/fetch-metrics"
+                "message": f"No metrics found for campaign {campaign_id}. Try fetching metrics first via /api/etherscan/campaign-report"
             }, status=404)
 
         return response.json({
