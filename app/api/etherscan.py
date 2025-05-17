@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 from sanic_ext import openapi
 from typing import Optional
 
-# Tạo Pydantic model cho request body
 class FetchMetricsRequest(BaseModel):
     contractAddress: str = Field(..., description="Ethereum contract address for the token")
     fromDate: str = Field(None, description="Start date for metrics calculation (ISO format)")
@@ -15,7 +14,6 @@ class FetchMetricsRequest(BaseModel):
     maxPages: int = Field(10, description="Maximum number of pages to fetch (0 for unlimited)")
     sortOrder: str = Field("desc", description="Sort order: 'asc' for oldest first, 'desc' for newest first (default)")
 
-# Model for campaign report requests
 class CampaignReportRequest(BaseModel):
     contractAddress: str = Field(..., description="Token contract address")
     preCampaignStart: str = Field(..., description="Pre-campaign period start date (ISO format)")
@@ -48,12 +46,11 @@ async def check_transactions(request: Request, contract_address: str):
             }, status=400)
 
         # Get pagination parameters
-        max_pages = int(request.args.get('max_pages', 3))  # Default 3 pages
+        max_pages = int(request.args.get('max_pages', 10))  # Default 3 pages
         sort_order = request.args.get('sort_order', 'desc')  # Default newest first
 
         etherscan_service = EtherscanService()
-        # Get transactions from the last 365 days to check activity
-        from_date = datetime.now() - timedelta(days=365)
+        from_date = datetime.now() - timedelta(days=100000)
         to_date = datetime.now()
 
         # Get block numbers for timestamp range
@@ -107,18 +104,22 @@ async def check_transactions(request: Request, contract_address: str):
             "message": f"Error checking transactions: {str(e)}"
         }, status=500)
 
-@etherscan_blueprint.route("/campaign-report", methods=["POST"])
-@openapi.summary("Generate Campaign Report")
-@openapi.description("Generate a comprehensive report comparing metrics before and during a campaign period")
+@etherscan_blueprint.route("/report-active-wallets", methods=["POST"])
+@openapi.summary("Generate Report Active Wallets")
+@openapi.description("Generate a report of active wallets for a given contract address")
 @openapi.body({
-    "contractAddress": "0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE", # SHIB token as example
+    "contractAddress": "0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE",
     "preCampaignStart": "2023-01-01T00:00:00Z",
     "preCampaignEnd": "2023-01-31T23:59:59Z",
     "campaignStart": "2023-02-01T00:00:00Z",
     "campaignEnd": "2023-02-28T23:59:59Z",
     "maxPages": 10
 })
-@openapi.response(200, {"success": True, "message": "Campaign report generated successfully", "data": {}}, "Success")
+@openapi.response(200, {
+    "success": True,
+    "message": "Campaign report generated successfully",
+    "data": {}
+}, "Success")
 @openapi.response(400, {"success": False, "message": "Invalid parameters"}, "Invalid parameters")
 @openapi.response(500, {"success": False, "message": "Error generating report"}, "Server error")
 async def campaign_report(request: Request):
@@ -176,7 +177,7 @@ async def campaign_report(request: Request):
 
         # Generate report
         etherscan_service = EtherscanService()
-        report = await etherscan_service.generate_campaign_report(
+        report = await etherscan_service.generate_wallet_action(
             contract_address,
             pre_start,
             pre_end,
@@ -187,11 +188,11 @@ async def campaign_report(request: Request):
 
         # Store report in database if needed
         db_service = DBService(request.app.ctx.db)
-        await db_service.store_campaign_report(report)
+        await db_service.store_active_wallets(report)
 
         return response.json({
             "success": True,
-            "message": "Affiliate campaign report generated successfully",
+            "message": "Campaign report generated successfully",
             "data": report
         })
 
@@ -200,6 +201,105 @@ async def campaign_report(request: Request):
             "success": False,
             "message": f"Error generating campaign report: {str(e)}"
         }, status=500)
+
+@etherscan_blueprint.route("/report-volume-transaction", methods=["POST"])
+@openapi.summary("Generate Report Volume Transaction")
+@openapi.description("Generate a report of volume transaction for a given contract address")
+@openapi.body({
+    "contractAddress": "0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE",
+    "preCampaignStart": "2023-01-01T00:00:00Z",
+    "preCampaignEnd": "2023-01-31T23:59:59Z",
+    "campaignStart": "2023-02-01T00:00:00Z",
+    "campaignEnd": "2023-02-28T23:59:59Z",
+    "maxPages": 10
+})
+@openapi.response(200, {
+    "success": True,
+    "message": "Campaign report generated successfully",
+    "data": {}
+}, "Success")
+@openapi.response(400, {"success": False, "message": "Invalid parameters"}, "Invalid parameters")
+@openapi.response(500, {"success": False, "message": "Error generating report"}, "Server error")
+async def report_volume_transaction(request: Request):
+    """
+    Generate a comprehensive campaign report with pre vs. during campaign metrics comparison
+    """
+    try:
+        # Validate request body
+        if not request.json:
+            return response.json({
+                "success": False,
+                "message": "Request body is required"
+            }, status=400)
+
+        try:
+            body = CampaignReportRequest(**request.json)
+        except Exception as e:
+            return response.json({
+                "success": False,
+                "message": f"Invalid request data: {str(e)}"
+            }, status=400)
+
+        # Validate contract address
+        contract_address = body.contractAddress
+        if not contract_address.startswith('0x') or len(contract_address) != 42:
+            return response.json({
+                "success": False,
+                "message": f"Invalid Ethereum address format: {contract_address}. Address must be in format 0x... and 42 characters long."
+            }, status=400)
+
+        # Parse dates
+        try:
+            pre_start = datetime.fromisoformat(body.preCampaignStart.replace('Z', '+00:00'))
+            pre_end = datetime.fromisoformat(body.preCampaignEnd.replace('Z', '+00:00'))
+            campaign_start = datetime.fromisoformat(body.campaignStart.replace('Z', '+00:00'))
+            campaign_end = datetime.fromisoformat(body.campaignEnd.replace('Z', '+00:00'))
+        except ValueError as e:
+            return response.json({
+                "success": False,
+                "message": f"Invalid date format. Use ISO format (e.g. 2023-01-01T00:00:00Z): {str(e)}"
+            }, status=400)
+
+        # Validate date ranges
+        if pre_end <= pre_start:
+            return response.json({
+                "success": False,
+                "message": "Pre-campaign end date must be after start date"
+            }, status=400)
+
+        if campaign_end <= campaign_start:
+            return response.json({
+                "success": False,
+                "message": "Campaign end date must be after start date"
+            }, status=400)
+
+        # Generate report
+        etherscan_service = EtherscanService()
+        report = await etherscan_service.get_volume_transaction(
+            contract_address,
+            pre_start,
+            pre_end,
+            campaign_start,
+            campaign_end,
+            max_pages=body.maxPages
+        )
+
+        # Store report in database if needed
+        db_service = DBService(request.app.ctx.db)
+        await db_service.store_volume_transactions(report)
+
+        return response.json({
+            "success": True,
+            "message": "Campaign report generated successfully",
+            "data": report
+        })
+
+    except Exception as e:
+        return response.json({
+            "success": False,
+            "message": f"Error generating campaign report: {str(e)}"
+        }, status=500)
+
 
 @etherscan_blueprint.route("/fetch-metrics", methods=["POST"])
 @openapi.summary("Fetch metrics from Etherscan")
